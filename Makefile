@@ -11,9 +11,3 @@ runClient:
 
 runServer:
 	./server 52547
-
-runGDBClient:
-	gdb -ex=r --args ./client localhost 52547
-
-runGDBServer:
-	gdb -ex=r --args ./server 52547
