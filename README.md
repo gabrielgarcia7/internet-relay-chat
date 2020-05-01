@@ -7,6 +7,9 @@
     <li>Gabriel Garcia Lorencetti NUSP 10691891</li>
 </ul>
 
+<p><strong>SO:</strong> Ubuntu 19.10</p>
+<p><strong>Compiler:</strong> g++ 9.2.1</p>
+
 <p><strong>To compile:</strong></p>
 	
 <p><em>	$ make all</em></p>
@@ -17,4 +20,4 @@
 <p><em>	$ make runServer</em></p>
 <p><em>	$ make runClient</em></p>
 
-	<p><strong>Note:</strong> The port number can be changed in the Makefile.</p>
+<p><strong>	Note:</strong> The port number can be changed in the Makefile.</p>
