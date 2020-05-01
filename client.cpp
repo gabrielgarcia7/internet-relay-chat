@@ -1,3 +1,16 @@
+ /*
+    Computer Network SSC-0142
+
+    ---- Internet Relay Chat ----
+    Module 1 - Sockets Implementation
+
+    Caio Augusto Duarte Basso NUSP 10801173
+    Gabriel Garcia Lorencetti NUSP 10691891
+
+    Client
+
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -10,12 +23,16 @@
 #include <thread>
 #include <atomic>
 
-#define BUFFER_SIZE 4096 // max char amount of buffer 4096 + largest nickname length
-#define NICK_SIZE 50
+#define BUFFER_SIZE 2048 // max char amount of buffer
+#define REC_BUFFER_SIZE 4096 // 2x max char amount of buffer (used if the message exceeds BUFFER_SIZE)
+#define NICK_SIZE 50 // max char amount of nickname
+#define BUFFER_SIZE_MAX 40960 // max char amount of bufferMax
 
-char nickname[NICK_SIZE];
-char buffer[BUFFER_SIZE];
-char message[BUFFER_SIZE+NICK_SIZE+2];
+char nickname[NICK_SIZE]; // nickname of the client
+char buffer[BUFFER_SIZE]; // message to write to client
+char recBuffer[REC_BUFFER_SIZE]; // message to write to client (used if the message exceeds BUFFER_SIZE)
+char bufferMax[BUFFER_SIZE_MAX]; // max message (used if the message exceeds BUFFER_SIZE)
+char message[BUFFER_SIZE+NICK_SIZE+2]; // message to write to client + nickname
 int socketClient, portNum, n;
 std::atomic<bool> flag (false);
 
@@ -62,44 +79,73 @@ void read_nickname(){
 }
 
 /*
-    
-
+    Function responsible for sending messages to the server.
 */
 void sendController(){
 
     while(!flag){
-        bzero(buffer,BUFFER_SIZE); // clears buffer
-        fgets(buffer, BUFFER_SIZE, stdin); // reads message from input
-        buffer[strlen(buffer)-1] = '\0';
+        bzero(bufferMax,BUFFER_SIZE_MAX); // clears bufferMax
+        bzero(message,BUFFER_SIZE+NICK_SIZE+2); // clears message
+        fgets(bufferMax, BUFFER_SIZE_MAX, stdin); // reads message from input
+        bufferMax[strlen(bufferMax)-1] = '\0';
             
-        if(buffer[0] == '\\'){
-            userCommand(buffer);
+        if(buffer[0] == '\\'){ // if it's a command, check 
+            userCommand(bufferMax);
         }
+
         else {
+
+            // In case of the message exceeds the BUFFER_SIZE, splits in several messages;
+            if(strlen(bufferMax) > BUFFER_SIZE){
+                int tam = strlen(bufferMax);
+                int aux = 0;
+
+                while(tam > BUFFER_SIZE){
+                    strncpy(buffer, bufferMax+aux, BUFFER_SIZE);
+                    buffer[BUFFER_SIZE] = '\0';
+
+                    if (aux == 0)
+                        sprintf(message, "%s: %s", nickname, buffer);
+                    else sprintf(message, "\n%s: %s", nickname, buffer);
+                    
+                    n = write(socketClient, message, strlen(message));    // sends message to server
+                    if (n == -1) 
+                        error("!!! Error writing to socket ");
+
+                    bzero(buffer, BUFFER_SIZE); // clears buffer
+                    bzero(message,BUFFER_SIZE+NICK_SIZE+2); // clears message
+
+                    tam -= BUFFER_SIZE;
+                    aux += BUFFER_SIZE;
+                }
+                strncpy(buffer, bufferMax+aux, tam);
+            }
+            else{
+                strcpy(buffer, bufferMax);
+            }
+
             sprintf(message, "%s: %s", nickname, buffer);
             n = write(socketClient, message, strlen(message));    // sends message to server
             if (n == -1) 
-            error("!!! Error writing to socket ");
+                error("!!! Error writing to socket ");
         }
     }
 }
 
 /*
-    
-
+    Function responsible for receiving messages from the server.
 */
 void receiveController(){
     while(!flag){
-        bzero(buffer,BUFFER_SIZE); // clears buffer
-        n = read(socketClient, buffer, BUFFER_SIZE); // receives message from server
+        bzero(recBuffer,REC_BUFFER_SIZE); // clears recBuffer
+        n = read(socketClient, recBuffer, REC_BUFFER_SIZE); // receives message from server
         if (n == -1) 
             error("!!! Error reading from socket !!!");
-        else if (n == 0 || strcasecmp("quit\n", buffer) == 0) {
+        else if (n == 0 || strcasecmp("\\quit\n", recBuffer) == 0) { // if the server is down
             printf("Server has left");
-
             flag = true;
         }
-        else if(n > 1) printf("%s\n",buffer);
+        else if(n > 1) printf("%s\n",recBuffer); // prints message
     }
 }
 
@@ -143,6 +189,7 @@ int main(int argc, char *argv[]){
     if (n == -1)    // message should confirm connection success
          error("!!! Error reading from socket !!!");
 
+    // If the chat is already full, exits
     if(strcasecmp(buffer, "Chat full") == 0){
         printf("---- Sorry, but the chat is full. Connection refused. ;( ----\n");
         close(socketClient);

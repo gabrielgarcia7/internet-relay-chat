@@ -1,3 +1,16 @@
+ /*
+    Computer Network SSC-0142
+
+    ---- Internet Relay Chat ----
+    Module 1 - Sockets Implementation
+
+    Caio Augusto Duarte Basso NUSP 10801173
+    Gabriel Garcia Lorencetti NUSP 10691891
+
+    Server
+
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,18 +24,19 @@
 #include <mutex>
 #include <atomic>
 
-#define MAXCLIENTS 2   // max number of clients connected to server
-#define BUFFER_SIZE 4096 // max char amount of buffer 4096 + largest nickname length
-#define NICK_SIZE 50
+#define MAXCLIENTS 10   // max number of clients connected to server
+#define BUFFER_SIZE 2048 // max char amount of buffer
+#define NICK_SIZE 50 // max char amount of nickname
+#define BUFFER_SIZE_MAX 40960 // max char amount of bufferMax
 
 int clientsNum = 0;
 char buffer[BUFFER_SIZE];  // message to write to client
-std::atomic<bool> flag (false);
-char message[BUFFER_SIZE+NICK_SIZE+2];
-bool flagFull = true;
-std::mutex mtx;
-int serverSocket;
-static bool flagMsg = false;
+char bufferMax[BUFFER_SIZE_MAX]; // max message (used if the message exceeds BUFFER_SIZE)
+char message[BUFFER_SIZE+NICK_SIZE+2]; // message to write to client + nickname
+bool flagFull = true; // used to verify if the server is full
+int serverSocket; // socket of the server
+static bool flagMsg = false; // used to check the consistency of the nickname
+std::mutex mtx; // used to lock and unlock threads to send messages
 
 typedef struct client {
     int socketId;
@@ -35,7 +49,7 @@ typedef struct client {
 CLIENT clients[MAXCLIENTS]; // stores every client connected to server
 
 /*
-    Function that prints the error and returns 1.
+    Function that prints the error message and returns 1.
 
 */
 void error(const char *msg){
@@ -58,8 +72,9 @@ void userCommand(char message[]){
 }
 
 /*
-    
-
+    Function that sends a message to the clients.
+    - If sendAll is true, send it to everyone.
+    - If sendAll is false, send to all but the specified userId.
 */
 void send_message(char* message, int userID, bool sendAll) {
 
@@ -76,12 +91,12 @@ void send_message(char* message, int userID, bool sendAll) {
 }
 
 /*
-    
-
+    Function that controls the connected client.
+    Receives the nickname and handles receiving 
+    messages and sending them to other clients.
 */
 void clientController(CLIENT client){
     
-    char buffer[BUFFER_SIZE];
     char nick[NICK_SIZE];
 
     flagMsg = false;
@@ -94,63 +109,89 @@ void clientController(CLIENT client){
     else{
         strcpy(client.nickname, nick);
 
-        sprintf(buffer, "---- %s joined the chat! ----\n\n", client.nickname);
-        printf("%s", buffer);
+        sprintf(message, "---- %s joined the chat! ----\n\n", client.nickname);
+        printf("%s", message);
     }
     
-    bzero(buffer, BUFFER_SIZE);
+    bzero(message, BUFFER_SIZE+NICK_SIZE+2); // clears message
     
-    while(!flagMsg){
+    while(!flagMsg){ // while the client is connected;
 
-        int receive = recv(client.socketId, buffer, BUFFER_SIZE, 0);
+        int receive = recv(client.socketId, message, BUFFER_SIZE+NICK_SIZE+2, 0);
 
         if(receive > 0){
-            if (strlen(buffer) > 0) {
-                send_message(buffer, client.usrID, false);
+            if (strlen(message) > 0) {
+                send_message(message, client.usrID, false);
                 
                 // Prints on the server who sent the message to whom
-                printf("%s\n", buffer); 
+                printf("%s\n", message); 
             }
         }
-        else if (receive == 0 || strcasecmp("quit\n", buffer) == 0) {
-            sprintf(buffer, "\n---- %s has left. ----\n\n", client.nickname);
-            printf("%s", buffer);
+        else if (receive == 0 || strcasecmp("\\quit\n", message) == 0) {
+            sprintf(message, "\n---- %s has left. ----\n\n", client.nickname);
+            printf("%s", message);
 
-            send_message(buffer, client.usrID, false);
+            send_message(message, client.usrID, false);
 
-            flagMsg = true;
+            flagMsg = true; // disconnect
         } else {
             error("!!! Error !!!\n");
-            flagMsg = true;
+            flagMsg = true; // disconnect
         }
-        bzero(buffer, BUFFER_SIZE);
+        bzero(message, BUFFER_SIZE+NICK_SIZE+2); // clears message
     }
 
+    // remove client
     client.connected = false;
     close(client.socketId);
     clientsNum--;
     flagFull = false;
-
 }
 
 /*
-    
-
+    Function responsible for handling server 
+    messages for all clients.
 */
 void sendController(){
 
     while(!flag){
-        bzero(buffer,BUFFER_SIZE); // clears buffer
+        bzero(bufferMax,BUFFER_SIZE_MAX); // clears buffer
         bzero(message,BUFFER_SIZE+NICK_SIZE+2); // clears buffer
-        fgets(buffer, BUFFER_SIZE, stdin); // reads message from input
-        buffer[strlen(buffer)-1] = '\0';
+        fgets(bufferMax, BUFFER_SIZE_MAX, stdin); // reads message from input
+        bufferMax[strlen(bufferMax)-1] = '\0';
             
-        if(buffer[0] == '\\'){
-            userCommand(buffer);
+        if(bufferMax[0] == '\\'){
+            userCommand(bufferMax);
         }
         else {
+
+            // In case of the message exceeds the BUFFER_SIZE, splits in several messages;
+            if(strlen(bufferMax) > BUFFER_SIZE){
+                int tam = strlen(bufferMax);
+                int aux = 0;
+
+                while(tam > BUFFER_SIZE){
+                    strncpy(buffer, bufferMax+aux, BUFFER_SIZE);
+                    buffer[BUFFER_SIZE] = '\0';
+
+                    if (aux == 0)
+                        sprintf(message, "Server: %s", buffer);
+                    else sprintf(message, "\nServer: %s", buffer);
+                    
+                    send_message(message, 0, true);
+                    bzero(buffer, BUFFER_SIZE); // clears buffer
+                    bzero(message,BUFFER_SIZE+NICK_SIZE+2); // clears message
+
+                    tam -= BUFFER_SIZE;
+                    aux += BUFFER_SIZE;
+                }
+                strncpy(buffer, bufferMax+aux, tam);
+            }
+            else{
+                strcpy(buffer, bufferMax);
+            }
             sprintf(message, "Server: %s", buffer);
-            send_message(message, 0, true);
+            send_message(message, 0, true); // send message to all clients
         }
     }
 }
@@ -169,7 +210,7 @@ int main(int argc, char *argv[]){
     portNum = atoi(argv[1]);    // sets port number
 
     serverSocket = socket(AF_INET, SOCK_STREAM, 0);  // creates a socket
-                    // AF_INET -- internet connection; SOCK_STREAM -- message in continuous stream; 0 -- OS chooses protocol
+    // AF_INET -- internet connection; SOCK_STREAM -- message in continuous stream; 0 -- OS chooses protocol
 
     if (serverSocket == -1) // socket() method returns -1 in case of error 
         error("!!! Error while opening socket !!!");
@@ -196,15 +237,17 @@ int main(int argc, char *argv[]){
     printf("\n ---------------------------------------------");
     printf("%s\n\n-> Type \"\\quit\" to close the server\n\n",buffer);
 
+    // creates a thread to send messages from the server to everyone
     std::thread sendMessagesToAll (sendController);
     sendMessagesToAll.detach();
+
     clientAdLength = sizeof(clientAddress);
 
-    while(!flag){
+    while(!flag){ // while the server is on
 
         clientSocket = accept(serverSocket, (struct sockaddr *) &clientAddress, &clientAdLength);
 
-        if(MAXCLIENTS == (clientsNum)){
+        if(MAXCLIENTS == (clientsNum)){ // if the chat is full
             if(flagFull){
                 printf("\n---- A client tried to connect, but the chat is full. Connection refused. ;( ----\n\n");                
                 write(clientSocket, "Chat full", strlen("Chat full"));
@@ -213,7 +256,7 @@ int main(int argc, char *argv[]){
         }
 
         else{        
-            if(clientSocket >= 0){
+            if(clientSocket >= 0){ // if a client tries to connect
                 write(clientSocket, welcomeMessage, strlen(welcomeMessage));    // sends message to server
 
                 clients[clientsNum].address = clientAddress;
@@ -221,19 +264,22 @@ int main(int argc, char *argv[]){
                 clients[clientsNum].connected = true;
                 clients[clientsNum].usrID = clientsNum;
 
+                // creates a thread to the new client connected;
                 std::thread client (clientController, clients[clientsNum]);
                 client.detach();
             }
         }       
 
         if(flag) return 0;
+
+        // to consume less cpu
         sleep(2);
     }
 
 
     for (int j = 0; j < clientsNum; j++) // closes all client sockets
         close(clients[j].socketId);
-    close(serverSocket);
+    close(serverSocket); // close server sockets
 
     return 0; 
 }
