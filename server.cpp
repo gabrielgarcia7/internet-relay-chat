@@ -37,6 +37,7 @@ bool flagFull = true; // used to verify if the server is full
 int serverSocket; // socket of the server
 static bool flagMsg = false; // used to check the consistency of the nickname
 std::mutex mtx; // used to lock and unlock threads to send messages
+std::atomic<bool> flag (false); // flag used to stop the application
 
 typedef struct client {
     int socketId;
@@ -127,7 +128,7 @@ void clientController(CLIENT client){
                 printf("%s\n", message); 
             }
         }
-        else if (receive == 0 || strcasecmp("\\quit\n", message) == 0) {
+        else if (receive == 0 || strcasecmp("quit\n", message) == 0) {
             sprintf(message, "\n---- %s has left. ----\n\n", client.nickname);
             printf("%s", message);
 
@@ -279,7 +280,7 @@ int main(int argc, char *argv[]){
 
     for (int j = 0; j < clientsNum; j++) // closes all client sockets
         close(clients[j].socketId);
-    close(serverSocket); // close server sockets
+    close(serverSocket); // close server socketsA
 
     return 0; 
 }

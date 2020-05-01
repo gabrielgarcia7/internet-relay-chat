@@ -33,8 +33,8 @@ char buffer[BUFFER_SIZE]; // message to write to client
 char recBuffer[REC_BUFFER_SIZE]; // message to write to client (used if the message exceeds BUFFER_SIZE)
 char bufferMax[BUFFER_SIZE_MAX]; // max message (used if the message exceeds BUFFER_SIZE)
 char message[BUFFER_SIZE+NICK_SIZE+2]; // message to write to client + nickname
-int socketClient, portNum, n;
-std::atomic<bool> flag (false);
+int socketClient, portNum, n; // informations of the client
+std::atomic<bool> flag (false); // flag used to stop the application
 
 /*
     Function that prints the error and returns 1.
@@ -89,7 +89,7 @@ void sendController(){
         fgets(bufferMax, BUFFER_SIZE_MAX, stdin); // reads message from input
         bufferMax[strlen(bufferMax)-1] = '\0';
             
-        if(buffer[0] == '\\'){ // if it's a command, check 
+        if(bufferMax[0] == '\\'){ // if it's a command, check 
             userCommand(bufferMax);
         }
 
@@ -141,7 +141,7 @@ void receiveController(){
         n = read(socketClient, recBuffer, REC_BUFFER_SIZE); // receives message from server
         if (n == -1) 
             error("!!! Error reading from socket !!!");
-        else if (n == 0 || strcasecmp("\\quit\n", recBuffer) == 0) { // if the server is down
+        else if (n == 0 || strcasecmp("quit\n", recBuffer) == 0) { // if the server is down
             printf("Server has left");
             flag = true;
         }
