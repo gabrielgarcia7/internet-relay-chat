@@ -7,7 +7,7 @@ rm:
 	rm server
 
 runClient:
-	./client localhost 52547
+	./client
 
 runServer:
 	./server 52547

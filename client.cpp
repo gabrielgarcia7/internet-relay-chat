@@ -11,6 +11,8 @@
 
  */
 
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -22,12 +24,23 @@
 #include <sys/time.h>
 #include <thread>
 #include <atomic>
+#include <signal.h> 
 
 #define BUFFER_SIZE 2048 // max char amount of buffer
 #define REC_BUFFER_SIZE 4096 // 2x max char amount of buffer (used if the message exceeds BUFFER_SIZE)
 #define NICK_SIZE 50 // max char amount of nickname
 #define BUFFER_SIZE_MAX 40960 // max char amount of bufferMax
 
+void userCommand(char*);
+void readNickname();
+void sendController();
+void receiveController();
+void connectServer(char*, int);
+void print_commands();
+
+
+struct sockaddr_in serverAddress;
+struct hostent *server;    
 char nickname[NICK_SIZE]; // nickname of the client
 char buffer[BUFFER_SIZE]; // message to write to client
 char recBuffer[REC_BUFFER_SIZE]; // message to write to client (used if the message exceeds BUFFER_SIZE)
@@ -35,6 +48,7 @@ char bufferMax[BUFFER_SIZE_MAX]; // max message (used if the message exceeds BUF
 char message[BUFFER_SIZE+NICK_SIZE+2]; // message to write to client + nickname
 int socketClient, portNum, n; // informations of the client
 std::atomic<bool> flag (false); // flag used to stop the application
+std::atomic<bool> connected (false); // flag used to stop the application
 
 /*
     Function that prints the error and returns 1.
@@ -46,12 +60,77 @@ void error(const char *msg){
 }
 
 /*
+    Function that sends a message to the server.
+
+*/
+void sendMessage(char bufferMax[]){
+
+    // In case of the message exceeds the BUFFER_SIZE, splits in several messages;
+    if(strlen(bufferMax) > BUFFER_SIZE){
+        int tam = strlen(bufferMax);
+        int aux = 0;
+
+        while(tam > BUFFER_SIZE){
+            strncpy(buffer, bufferMax+aux, BUFFER_SIZE);
+            buffer[BUFFER_SIZE] = '\0';
+
+            if (aux == 0)
+                sprintf(message, "%s: %s", nickname, buffer);
+            else sprintf(message, "\n%s: %s", nickname, buffer);
+            
+            n = write(socketClient, message, strlen(message));    // sends message to server
+            if (n == -1) 
+                error("!!! Error writing to socket ");
+
+            bzero(buffer, BUFFER_SIZE); // clears buffer
+            bzero(message,BUFFER_SIZE+NICK_SIZE+2); // clears message
+
+            tam -= BUFFER_SIZE;
+            aux += BUFFER_SIZE;
+        }
+        strncpy(buffer, bufferMax+aux, tam);
+    }
+    else{
+        strcpy(buffer, bufferMax);
+    }
+
+    sprintf(message, "%s: %s", nickname, buffer);
+    n = write(socketClient, message, strlen(message));    // sends message to server
+    if (n == -1) 
+        error("!!! Error writing to socket ");
+}
+
+/*
     Function that verifies the commands typed by the user.
 
 */
 void userCommand(char message[]){
-    if (strcasecmp(message, "\\quit") == 0){    // if user wants to leave chat
+    if (strcasecmp(message, "/quit") == 0){    // if user wants to leave chat
         flag = true;
+        connected = true;
+    }
+
+    else if (strcasecmp(message, "/connect") == 0){ // if user wants to connect to server
+        char tempConnect[256];
+        printf("\n-> Type the port number to connect to the server. The default port used is 52547.\n->If you want to cancel connection, type ABORT\n(Keep in mind that if you already connected to another chat, it will disconnect from current room!)\n");
+        
+        fgets(tempConnect, 256, stdin);
+        tempConnect[strlen(tempConnect)-1] = '\0';
+
+        if(strcasecmp(tempConnect, "ABORT") == 0)
+            return;
+        
+        char localhost[] = "localhost";
+        connectServer(localhost, atoi(tempConnect));
+
+    }
+    else if (strcasecmp(message, "/ping") == 0){    // if user wants to check latency to server
+        if(connected) sendMessage(message);
+        else printf("\n->You are not connected to any chat yet!\n-> Use the /connect command first to connect to a server.\n\n");
+    }
+    else if (strcasecmp(message, "/help") == 0){    // if user asks for commands
+        print_commands();
+        printf("\n");
     }
 }
 
@@ -59,7 +138,7 @@ void userCommand(char message[]){
     Function that reads the client's nickname.
 
 */
-void read_nickname(){
+void readNickname(){
 
     char buffer_nick[256];
 
@@ -88,46 +167,14 @@ void sendController(){
         bzero(message,BUFFER_SIZE+NICK_SIZE+2); // clears message
         fgets(bufferMax, BUFFER_SIZE_MAX, stdin); // reads message from input
         bufferMax[strlen(bufferMax)-1] = '\0';
-            
-        if(bufferMax[0] == '\\'){ // if it's a command, check 
+        
+        if (feof(stdin)) strcpy(bufferMax, "/quit");
+        if(bufferMax[0] == '/'){ // if it's a command, check 
             userCommand(bufferMax);
         }
 
         else {
-
-            // In case of the message exceeds the BUFFER_SIZE, splits in several messages;
-            if(strlen(bufferMax) > BUFFER_SIZE){
-                int tam = strlen(bufferMax);
-                int aux = 0;
-
-                while(tam > BUFFER_SIZE){
-                    strncpy(buffer, bufferMax+aux, BUFFER_SIZE);
-                    buffer[BUFFER_SIZE] = '\0';
-
-                    if (aux == 0)
-                        sprintf(message, "%s: %s", nickname, buffer);
-                    else sprintf(message, "\n%s: %s", nickname, buffer);
-                    
-                    n = write(socketClient, message, strlen(message));    // sends message to server
-                    if (n == -1) 
-                        error("!!! Error writing to socket ");
-
-                    bzero(buffer, BUFFER_SIZE); // clears buffer
-                    bzero(message,BUFFER_SIZE+NICK_SIZE+2); // clears message
-
-                    tam -= BUFFER_SIZE;
-                    aux += BUFFER_SIZE;
-                }
-                strncpy(buffer, bufferMax+aux, tam);
-            }
-            else{
-                strcpy(buffer, bufferMax);
-            }
-
-            sprintf(message, "%s: %s", nickname, buffer);
-            n = write(socketClient, message, strlen(message));    // sends message to server
-            if (n == -1) 
-                error("!!! Error writing to socket ");
+            sendMessage(bufferMax);
         }
     }
 }
@@ -149,29 +196,14 @@ void receiveController(){
     }
 }
 
-int main(int argc, char *argv[]){
-    
-    struct sockaddr_in serverAddress;
-    struct hostent *server;    
+void connectServer(char *serverName, int serverPort){
 
-    /* 
-    ARGUMENTS:
-        - argv[0] == client proccess name;
-        - argv[1] == server host machine name;
-        - argv[2] == port number.
-    */
-    if (argc < 3) {
-       printf("!!! Error, bad proccess call, try: %s hostname port !!!\n", argv[0]);
-       exit(1);
-    }
-
-    // -- CONNECTING TO THE SERVER --
-    portNum = atoi(argv[2]); // sets port number;
+    portNum = serverPort; // sets port number;
     socketClient = socket(AF_INET, SOCK_STREAM, 0); // creates a socket;
     if (socketClient == -1)
         error("!!! Error while opening socket !!!\n");
 
-    server = gethostbyname(argv[1]); // return entry from host data base for host with NAME.
+    server = gethostbyname(serverName); // return entry from host data base for host with NAME.
 
     if (server == NULL)
         error("!!! Error, host not found !!!\n");
@@ -193,21 +225,17 @@ int main(int argc, char *argv[]){
     if(strcasecmp(buffer, "Chat full") == 0){
         printf("---- Sorry, but the chat is full. Connection refused. ;( ----\n");
         close(socketClient);
-        return 0;
+        exit(1);
     }
+    connected = true;
+
     printf("\n%s", buffer);
 
-    printf("\n --------------------------------------");
-    printf("\n|                                      |");
-    printf("\n|         Welcome to the chat!         |");
-    printf("\n|                                      |");
-    printf("\n --------------------------------------\n\n");
-
     // reads nickname and sends it to the server;
-    read_nickname();
+    readNickname();
     write(socketClient, nickname, NICK_SIZE);    
 
-    printf("\n-> Hi, %s. The chat is ready for conversation!\n-> Type \"\\quit\" at any time to leave the chat.\n\n", nickname);
+    printf("\n-> Hi, %s. The chat is ready for conversation!\n-> Type \"/quit\" at any time to leave the chat and \"/help\" to see the other commands.\n\n", nickname);
 
     // if the code gets here without any error, it is connected and ready to send and receive messages; 
 
@@ -216,11 +244,59 @@ int main(int argc, char *argv[]){
     sendMessages.detach();
     std::thread receiveMessages (receiveController);
     receiveMessages.detach();
+}
+
+void first_connection(){
+    bzero(bufferMax,BUFFER_SIZE); // clears message
+    fgets(bufferMax, BUFFER_SIZE_MAX, stdin); // reads message from input
+    bufferMax[strlen(bufferMax)-1] = '\0';
+    
+    
+    if (feof(stdin)) strcpy(bufferMax, "/quit");
+    if(bufferMax[0] == '/'){ // if it's a command, check 
+        userCommand(bufferMax);
+    }
+    
+}
+
+void print_commands(){
+    printf("\n-> Commands:\n\n");
+    printf("   - /connect (establishes the connection to the server given a port)\n");
+    printf("   - /quit (ends the connection and closes the application)\n");
+    printf("   - /ping (the server returns pong as soon as it receives the message)\n");
+}
+
+void print_welcome_message(){
+    printf("\n --------------------------------------");
+    printf("\n|                                      |");
+    printf("\n|         Welcome to the chat!         |");
+    printf("\n|                                      |");
+    printf("\n --------------------------------------\n");
+
+    print_commands();
+    printf("   - /help (shows available commands)\n\n");
+
+}
+
+void sigintHandler(int sig_num){
+    signal(SIGINT, sigintHandler); 
+    printf("\n---- Cannot be terminated using Ctrl+C ----\n"); 
+    printf("-> Instead, use the /quit command or Ctrl+D.\n");
+    fflush(stdout); 
+} 
+
+int main(int argc, char *argv[]){
+    
+    signal(SIGINT, sigintHandler);
+
+    print_welcome_message();
+
+    while(!connected) first_connection();
 
     // while not receiving the signal to disconnect, continues...
     while(!flag){}
 
-    printf("\n--- Leaving the server... Goodbye! ---\n\n");
+    printf("\n--- Leaving the application... Goodbye! ---\n\n");
 
     // Close the socket and return 0;
     close(socketClient);

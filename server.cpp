@@ -23,6 +23,7 @@
 #include <pthread.h>
 #include <mutex>
 #include <atomic>
+#include <signal.h> 
 
 #define MAXCLIENTS 10   // max number of clients connected to server
 #define BUFFER_SIZE 2048 // max char amount of buffer
@@ -63,8 +64,11 @@ void error(const char *msg){
 
 */
 void userCommand(char message[]){
-    if (strcasecmp(message, "\\quit") == 0){    // if server wants to leave chat
+    if (strcasecmp(message, "/quit") == 0){    // if server wants to leave chat
         flag = true;
+
+        printf("\n--- Leaving the application... Goodbye! ---\n\n");
+
         for (int j = 0; j < clientsNum; j++) // closes all client sockets
             close(clients[j].socketId);
         close(serverSocket);
@@ -72,20 +76,40 @@ void userCommand(char message[]){
     }
 }
 
+void sigintHandler(int sig_num){
+    signal(SIGINT, sigintHandler); 
+    printf("\n---- Cannot be terminated using Ctrl+C ----\n"); 
+    printf("-> Instead, use the /quit command or Ctrl+D\n\n");
+    fflush(stdout); 
+} 
+
 /*
     Function that sends a message to the clients.
     - If sendAll is true, send it to everyone.
     - If sendAll is false, send to all but the specified userId.
 */
-void send_message(char* message, int userID, bool sendAll) {
+void sendMessage(char* message, int userID, bool sendAll) {
 
     mtx.lock();
 
     for(int i = 0; i < MAXCLIENTS; i++){
-        if((clients[i].usrID != userID && clients[i].connected == true) || (sendAll==true && clients[i].connected == true))
-            if (write(clients[i].socketId, message, strlen(message)) < 0 && flagMsg == false) {
-                error("!!! Error sending a message !!!\n");
+        if((clients[i].usrID != userID && clients[i].connected == true) || (sendAll==true && clients[i].connected == true)){
+            
+            bool sended = false;
+            int count = 0;
+
+            while(sended == false && count < 5){
+                if (write(clients[i].socketId, message, strlen(message)) < 0 && flagMsg == false) {                
+                    count++;
+                }
+                else sended = true;
             }
+
+            if(count >= 5 && sended == false){
+                error("!!! Error sending a message !!!\n");
+                close(clients[i].usrID);
+            }
+        }
     }
 
     mtx.unlock();
@@ -122,17 +146,23 @@ void clientController(CLIENT client){
 
         if(receive > 0){
             if (strlen(message) > 0) {
-                send_message(message, client.usrID, false);
                 
-                // Prints on the server who sent the message to whom
-                printf("%s\n", message); 
+                if (strstr(message, "/ping")){  // if message is ping request
+                    write(client.socketId, "pong", strlen("pong"));     // fazer uma funcao so pra isso?
+                }
+                else{
+                    sendMessage(message, client.usrID, false);
+                    
+                    // Prints on the server who sent the message to whom
+                    printf("%s\n", message); 
+                }
             }
         }
         else if (receive == 0 || strcasecmp("quit\n", message) == 0) {
             sprintf(message, "\n---- %s has left. ----\n\n", client.nickname);
             printf("%s", message);
 
-            send_message(message, client.usrID, false);
+            sendMessage(message, client.usrID, false);
 
             flagMsg = true; // disconnect
         } else {
@@ -160,8 +190,9 @@ void sendController(){
         bzero(message,BUFFER_SIZE+NICK_SIZE+2); // clears buffer
         fgets(bufferMax, BUFFER_SIZE_MAX, stdin); // reads message from input
         bufferMax[strlen(bufferMax)-1] = '\0';
-            
-        if(bufferMax[0] == '\\'){
+        
+        if (feof(stdin)) strcpy(bufferMax, "/quit");
+        if(bufferMax[0] == '/'){
             userCommand(bufferMax);
         }
         else {
@@ -179,7 +210,7 @@ void sendController(){
                         sprintf(message, "Server: %s", buffer);
                     else sprintf(message, "\nServer: %s", buffer);
                     
-                    send_message(message, 0, true);
+                    sendMessage(message, 0, true);
                     bzero(buffer, BUFFER_SIZE); // clears buffer
                     bzero(message,BUFFER_SIZE+NICK_SIZE+2); // clears message
 
@@ -192,7 +223,7 @@ void sendController(){
                 strcpy(buffer, bufferMax);
             }
             sprintf(message, "Server: %s", buffer);
-            send_message(message, 0, true); // send message to all clients
+            sendMessage(message, 0, true); // send message to all clients
         }
     }
 }
@@ -204,6 +235,8 @@ int main(int argc, char *argv[]){
     socklen_t clientAdLength;   // stores size of client address
     struct sockaddr_in serverAddress, clientAddress;    // internet address, defined in netinet/in.h
     char welcomeMessage[60] = "\n---- Successfully connected to the server. ----\n\n";
+
+    signal(SIGINT, sigintHandler);
     
     if (argc < 2) { // argv[0] == server proccess name, argv[1] == port number
         error("!!! Error, no port number provided. Provide port number while calling proccess !!!");
@@ -236,7 +269,7 @@ int main(int argc, char *argv[]){
     printf("\n|         Welcome to the chat server!         |");
     printf("\n|                                             |");
     printf("\n ---------------------------------------------");
-    printf("%s\n\n-> Type \"\\quit\" to close the server\n\n",buffer);
+    printf("%s\n\n-> Type \"/quit\" or Ctrl+D to close the server\n\n",buffer);
 
     // creates a thread to send messages from the server to everyone
     std::thread sendMessagesToAll (sendController);
@@ -276,6 +309,8 @@ int main(int argc, char *argv[]){
         // to consume less cpu
         sleep(2);
     }
+
+    printf("\n--- Leaving the application... Goodbye! ---\n\n");
 
 
     for (int j = 0; j < clientsNum; j++) // closes all client sockets
