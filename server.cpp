@@ -2,7 +2,7 @@
     Computer Network SSC-0142
 
     ---- Internet Relay Chat ----
-    Module 1 - Sockets Implementation
+    Module 2 - Communication between multiple clients and server
 
     Caio Augusto Duarte Basso NUSP 10801173
     Gabriel Garcia Lorencetti NUSP 10691891
@@ -30,7 +30,7 @@
 #define NICK_SIZE 50 // max char amount of nickname
 #define BUFFER_SIZE_MAX 40960 // max char amount of bufferMax
 
-int clientsNum = 0;
+int clientsNum = 0; // number of clients connected
 char buffer[BUFFER_SIZE];  // message to write to client
 char bufferMax[BUFFER_SIZE_MAX]; // max message (used if the message exceeds BUFFER_SIZE)
 char message[BUFFER_SIZE+NICK_SIZE+2]; // message to write to client + nickname
@@ -52,7 +52,6 @@ CLIENT clients[MAXCLIENTS]; // stores every client connected to server
 
 /*
     Function that prints the error message and returns 1.
-
 */
 void error(const char *msg){
     perror(msg);
@@ -61,7 +60,6 @@ void error(const char *msg){
 
 /*
     Function that verifies the commands typed by the user.
-
 */
 void userCommand(char message[]){
     if (strcasecmp(message, "/quit") == 0){    // if server wants to leave chat
@@ -76,6 +74,9 @@ void userCommand(char message[]){
     }
 }
 
+/*
+    Function to deal with Ctrl+C.
+*/
 void sigintHandler(int sig_num){
     signal(SIGINT, sigintHandler); 
     printf("\n---- Cannot be terminated using Ctrl+C ----\n"); 
@@ -117,8 +118,8 @@ void sendMessage(char* message, int userID, bool sendAll) {
 
 /*
     Function that controls the connected client.
-    Receives the nickname and handles receiving 
-    messages and sending them to other clients.
+    Receives the nickname and handles receiving messages and sending 
+    them to other clients.
 */
 void clientController(CLIENT client){
     

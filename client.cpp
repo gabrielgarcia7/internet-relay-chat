@@ -2,7 +2,7 @@
     Computer Network SSC-0142
 
     ---- Internet Relay Chat ----
-    Module 1 - Sockets Implementation
+    Module 2 - Communication between multiple clients and server
 
     Caio Augusto Duarte Basso NUSP 10801173
     Gabriel Garcia Lorencetti NUSP 10691891
@@ -10,8 +10,6 @@
     Client
 
  */
-
-
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,6 +29,7 @@
 #define NICK_SIZE 50 // max char amount of nickname
 #define BUFFER_SIZE_MAX 40960 // max char amount of bufferMax
 
+// Function headers
 void userCommand(char*);
 void readNickname();
 void sendController();
@@ -38,9 +37,8 @@ void receiveController();
 void connectServer(char*, int);
 void print_commands();
 
-
-struct sockaddr_in serverAddress;
-struct hostent *server;    
+struct sockaddr_in serverAddress; // server adress
+struct hostent *server;  // informations about the server
 char nickname[NICK_SIZE]; // nickname of the client
 char buffer[BUFFER_SIZE]; // message to write to client
 char recBuffer[REC_BUFFER_SIZE]; // message to write to client (used if the message exceeds BUFFER_SIZE)
@@ -52,7 +50,6 @@ std::atomic<bool> connected (false); // flag used to stop the application
 
 /*
     Function that prints the error and returns 1.
-
 */
 void error(const char *msg){
     perror(msg);
@@ -61,7 +58,6 @@ void error(const char *msg){
 
 /*
     Function that sends a message to the server.
-
 */
 void sendMessage(char bufferMax[]){
 
@@ -102,7 +98,6 @@ void sendMessage(char bufferMax[]){
 
 /*
     Function that verifies the commands typed by the user.
-
 */
 void userCommand(char message[]){
     if (strcasecmp(message, "/quit") == 0){    // if user wants to leave chat
@@ -111,22 +106,35 @@ void userCommand(char message[]){
     }
 
     else if (strcasecmp(message, "/connect") == 0){ // if user wants to connect to server
-        char tempConnect[256];
-        printf("\n-> Type the port number to connect to the server. The default port used is 52547.\n->If you want to cancel connection, type ABORT\n(Keep in mind that if you already connected to another chat, it will disconnect from current room!)\n");
-        
-        fgets(tempConnect, 256, stdin);
-        tempConnect[strlen(tempConnect)-1] = '\0';
+        char hostname[256];
+        char portnumber[256];
 
-        if(strcasecmp(tempConnect, "ABORT") == 0)
+        printf("\n-> Type the hostname and the port number to connect to the server.\n\n->The default is:\n"
+                    "  - Hostname: localhost\n  - Port number: 52547\n\n->If you want to cancel connection,"
+                    "type ABORT\n(Keep in mind that if you already connected to another chat, it will disconnect"
+                    "from current room!)\n");
+        
+        printf("\nHostname: ");
+        fgets(hostname, 256, stdin);
+        hostname[strlen(hostname)-1] = '\0';
+
+        if(strcasecmp(hostname, "ABORT") == 0)
             return;
         
-        char localhost[] = "localhost";
-        connectServer(localhost, atoi(tempConnect));
+        printf("Port number: ");
+        fgets(portnumber, 256, stdin);
+        portnumber[strlen(portnumber)-1] = '\0';
 
+        if(strcasecmp(portnumber, "ABORT") == 0)
+            return;
+        
+        connectServer(hostname, atoi(portnumber));
     }
+
     else if (strcasecmp(message, "/ping") == 0){    // if user wants to check latency to server
         if(connected) sendMessage(message);
-        else printf("\n->You are not connected to any chat yet!\n-> Use the /connect command first to connect to a server.\n\n");
+        else printf("\n->You are not connected to any chat yet!\n"
+                        "-> Use the /connect command first to connect to a server.\n\n");
     }
     else if (strcasecmp(message, "/help") == 0){    // if user asks for commands
         print_commands();
@@ -136,7 +144,6 @@ void userCommand(char message[]){
 
 /*
     Function that reads the client's nickname.
-
 */
 void readNickname(){
 
@@ -146,7 +153,8 @@ void readNickname(){
     fgets(buffer_nick, 256, stdin);
 
     if(strlen(buffer_nick) > 50){
-        printf("-> The nickname exceeds 50 characters. The first 50 characters will be considered.\n");
+        printf("-> The nickname exceeds 50 characters. The first 50 characters"
+                "will be considered.\n");
         buffer_nick[NICK_SIZE] = '\0';
     }
     else{
@@ -196,6 +204,9 @@ void receiveController(){
     }
 }
 
+/*
+    Function responsible for connecting to the server.
+*/
 void connectServer(char *serverName, int serverPort){
 
     portNum = serverPort; // sets port number;
@@ -235,7 +246,8 @@ void connectServer(char *serverName, int serverPort){
     readNickname();
     write(socketClient, nickname, NICK_SIZE);    
 
-    printf("\n-> Hi, %s. The chat is ready for conversation!\n-> Type \"/quit\" at any time to leave the chat and \"/help\" to see the other commands.\n\n", nickname);
+    printf("\n-> Hi, %s. The chat is ready for conversation!\n-> Type \"/quit\" at any time "
+                "to leave the chat and \"/help\" to see the other commands.\n\n", nickname);
 
     // if the code gets here without any error, it is connected and ready to send and receive messages; 
 
@@ -246,8 +258,11 @@ void connectServer(char *serverName, int serverPort){
     receiveMessages.detach();
 }
 
+/*
+    Function for making the first connection.
+*/
 void first_connection(){
-    bzero(bufferMax,BUFFER_SIZE); // clears message
+    bzero(bufferMax,BUFFER_SIZE); // clears bufer
     fgets(bufferMax, BUFFER_SIZE_MAX, stdin); // reads message from input
     bufferMax[strlen(bufferMax)-1] = '\0';
     
@@ -259,6 +274,9 @@ void first_connection(){
     
 }
 
+/*
+    Function for printing commands.
+*/
 void print_commands(){
     printf("\n-> Commands:\n\n");
     printf("   - /connect (establishes the connection to the server given a port)\n");
@@ -266,6 +284,10 @@ void print_commands(){
     printf("   - /ping (the server returns pong as soon as it receives the message)\n");
 }
 
+
+/*
+    Function to print welcome message.
+*/
 void print_welcome_message(){
     printf("\n --------------------------------------");
     printf("\n|                                      |");
@@ -278,6 +300,9 @@ void print_welcome_message(){
 
 }
 
+/*
+    Function to deal with Ctrl+C.
+*/
 void sigintHandler(int sig_num){
     signal(SIGINT, sigintHandler); 
     printf("\n---- Cannot be terminated using Ctrl+C ----\n"); 
@@ -291,6 +316,7 @@ int main(int argc, char *argv[]){
 
     print_welcome_message();
 
+    // while not connect to the server...
     while(!connected) first_connection();
 
     // while not receiving the signal to disconnect, continues...
