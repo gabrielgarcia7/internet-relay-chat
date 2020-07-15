@@ -35,7 +35,8 @@ void readNickname();
 void sendController();
 void receiveController();
 void connectServer(char*, int);
-void print_commands();
+void printCommands();
+void connectChannel(char*);
 
 struct sockaddr_in serverAddress; // server adress
 struct hostent *server;  // informations about the server
@@ -71,8 +72,8 @@ void sendMessage(char bufferMax[]){
             buffer[BUFFER_SIZE] = '\0';
 
             if (aux == 0)
-                sprintf(message, "%s: %s", nickname, buffer);
-            else sprintf(message, "\n%s: %s", nickname, buffer);
+                sprintf(message, "%s", buffer);
+            else sprintf(message, "\n%s", buffer);
             
             n = write(socketClient, message, strlen(message));    // sends message to server
             if (n == -1) 
@@ -90,7 +91,7 @@ void sendMessage(char bufferMax[]){
         strcpy(buffer, bufferMax);
     }
 
-    sprintf(message, "%s: %s", nickname, buffer);
+    sprintf(message, "%s", buffer);
     n = write(socketClient, message, strlen(message));    // sends message to server
     if (n == -1) 
         error("!!! Error writing to socket ");
@@ -99,47 +100,65 @@ void sendMessage(char bufferMax[]){
 /*
     Function that verifies the commands typed by the user.
 */
-void userCommand(char message[]){
-    if (strcasecmp(message, "/quit") == 0){    // if user wants to leave chat
+void userCommand(char command[]){
+    if (strcasecmp(command, "/quit") == 0){    // if user wants to leave chat
+        printf("%s", command);
         flag = true;
         connected = true;
     }
 
-    else if (strcasecmp(message, "/connect") == 0){ // if user wants to connect to server
-        char hostname[256];
-        char portnumber[256];
+    else if (strcasecmp(command, "/c") == 0){ // if user wants to connect to server
+        // char hostname[256];
+        // char portnumber[256];
 
-        printf("\n-> Type the hostname and the port number to connect to the server.\n\n->The default is:\n"
-                    "  - Hostname: localhost\n  - Port number: 52547\n\n->If you want to cancel connection,"
-                    "type ABORT\n(Keep in mind that if you already connected to another chat, it will disconnect"
-                    "from current room!)\n");
+        // printf("\n-> Type the hostname and the port number to connect to the server.\n\n->The default is:\n"
+        //             "  - Hostname: localhost\n  - Port number: 52547\n\n->If you want to cancel connection,"
+        //             "type ABORT\n(Keep in mind that if you already connected to another chat, it will disconnect"
+        //             "from current room!)\n");
         
-        printf("\nHostname: ");
-        fgets(hostname, 256, stdin);
-        hostname[strlen(hostname)-1] = '\0';
+        // printf("\nHostname: ");
+        // fgets(hostname, 256, stdin);
+        // hostname[strlen(hostname)-1] = '\0';
 
-        if(strcasecmp(hostname, "ABORT") == 0)
-            return;
+        // if(strcasecmp(hostname, "ABORT") == 0)
+        //     return;
         
-        printf("Port number: ");
-        fgets(portnumber, 256, stdin);
-        portnumber[strlen(portnumber)-1] = '\0';
+        // printf("Port number: ");
+        // fgets(portnumber, 256, stdin);
+        // portnumber[strlen(portnumber)-1] = '\0';
 
-        if(strcasecmp(portnumber, "ABORT") == 0)
-            return;
-        
+        // if(strcasecmp(portnumber, "ABORT") == 0)
+        //     return;
+        char hostname[256] = "localhost";
+        char portnumber[256] = "52547";
         connectServer(hostname, atoi(portnumber));
     }
 
-    else if (strcasecmp(message, "/ping") == 0){    // if user wants to check latency to server
-        if(connected) sendMessage(message);
+    else if (strcasecmp(command, "/ping") == 0){    // if user wants to check latency to server
+        if(connected) sendMessage(command);
         else printf("\n->You are not connected to any chat yet!\n"
                         "-> Use the /connect command first to connect to a server.\n\n");
     }
-    else if (strcasecmp(message, "/help") == 0){    // if user asks for commands
-        print_commands();
+
+    else if (strcasecmp(command, "/help") == 0){    // if user asks for commands
+        printCommands();
         printf("\n");
     }
+
+    else if (strncasecmp(command, "/join ", 6) == 0){    // if user wants to join a channel
+        sendMessage(command);
+    }
+
+    else if (strcasecmp(command, "/nickname") == 0){    // if user wants to change nickname
+        sendMessage(command);
+    }
+    
+    else if ((strcasecmp(command, "/kick") == 0) || (strcasecmp(command, "/mute") == 0) || (strcasecmp(command, "/unmute") == 0) || (strcasecmp(command, "/whois") == 0)){  // admin commands
+        if(connected) sendMessage(command);
+        else printf("\n->You are not connected to any chat yet!\n"
+                        "-> Use the /connect command first to connect to a server.\n\n");
+    }
+
 }
 
 /*
@@ -246,8 +265,13 @@ void connectServer(char *serverName, int serverPort){
     readNickname();
     write(socketClient, nickname, NICK_SIZE);    
 
-    printf("\n-> Hi, %s. The chat is ready for conversation!\n-> Type \"/quit\" at any time "
-                "to leave the chat and \"/help\" to see the other commands.\n\n", nickname);
+    printf("\n\n-> Hi, %s. Welcome to our chat!\n\n\n", nickname);
+
+    printf("-> You can type \"/quit\" at any time to leave the chat and \"/help\" to see the other commands.\n\n");
+
+    printf("-> Use the command \"./join channelName\" to enter a channel and start chatting.\n");
+    printf("(Remembers that channel names must be less than 200 characters and start with '&' or '#'. Also, it must not contain spaces, CTRL + G or commas.)\n\n\n");
+
 
     // if the code gets here without any error, it is connected and ready to send and receive messages; 
 
@@ -277,11 +301,26 @@ void first_connection(){
 /*
     Function for printing commands.
 */
-void print_commands(){
+void printCommands(){
     printf("\n-> Commands:\n\n");
     printf("   - /connect (establishes the connection to the server given a port)\n");
     printf("   - /quit (ends the connection and closes the application)\n");
     printf("   - /ping (the server returns pong as soon as it receives the message)\n");
+}
+
+void printChannelCommands(){
+    printf("\n-> Channel commands :\n\n");
+    printf("   - /join channelName (enters a channel)\n");
+    printf("   - /nickname desiredNickname (the client is recognized by the specified nickname)\n");
+    printf("   - /ping (the server returns pong as soon as it receives the message)\n");
+}
+
+void printAdminCommands(){
+    printf("\n-> Administrator commands :\n\n");
+    printf("   - /kick username (closes the connection for a specified user)\n");
+    printf("   - /mute username (prevents a user from being able to send messages on this channel)\n");
+    printf("   - /unmute username (remove the user's mute)\n");
+    printf("   - /whois username (returns the user's IP address only to the administrator)\n");
 }
 
 
@@ -295,7 +334,7 @@ void print_welcome_message(){
     printf("\n|                                      |");
     printf("\n --------------------------------------\n");
 
-    print_commands();
+    printCommands();
     printf("   - /help (shows available commands)\n\n");
 
 }
