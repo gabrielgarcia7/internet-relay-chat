@@ -149,11 +149,11 @@ void userCommand(char command[]){
         sendMessage(command);
     }
 
-    else if (strcasecmp(command, "/nickname") == 0){    // if user wants to change nickname
+    else if (strncasecmp(command, "/nickname ", 10) == 0){    // if user wants to change nickname
         sendMessage(command);
     }
     
-    else if ((strcasecmp(command, "/kick") == 0) || (strcasecmp(command, "/mute") == 0) || (strcasecmp(command, "/unmute") == 0) || (strcasecmp(command, "/whois") == 0)){  // admin commands
+    else if ((strncasecmp(command, "/kick ", 6) == 0) || (strcasecmp(command, "/mute") == 0) || (strcasecmp(command, "/unmute") == 0) || (strcasecmp(command, "/whois") == 0)){  // admin commands
         if(connected) sendMessage(command);
         else printf("\n->You are not connected to any chat yet!\n"
                         "-> Use the /connect command first to connect to a server.\n\n");
@@ -215,8 +215,13 @@ void receiveController(){
         n = read(socketClient, recBuffer, REC_BUFFER_SIZE); // receives message from server
         if (n == -1) 
             error("!!! Error reading from socket !!!");
-        else if (n == 0 || strcasecmp("quit\n", recBuffer) == 0) { // if the server is down
+        else if (/*n == 0 || */strcasecmp("quit\n", recBuffer) == 0) { // if the server is down
+            printf("recbuffer: %s\n\nn: %d\n", recBuffer, n);
             printf("Server has left");
+            //flag = true;
+        }
+        else if(strcasecmp("kicked", recBuffer) == 0){
+            printf("triste\n\n");
             flag = true;
         }
         else if(n > 1) printf("%s\n",recBuffer); // prints message
@@ -269,7 +274,7 @@ void connectServer(char *serverName, int serverPort){
 
     printf("-> You can type \"/quit\" at any time to leave the chat and \"/help\" to see the other commands.\n\n");
 
-    printf("-> Use the command \"./join channelName\" to enter a channel and start chatting.\n");
+    printf("-> Use the command \"/join channelName\" to enter a channel and start chatting.\n");
     printf("(Remembers that channel names must be less than 200 characters and start with '&' or '#'. Also, it must not contain spaces, CTRL + G or commas.)\n\n\n");
 
 

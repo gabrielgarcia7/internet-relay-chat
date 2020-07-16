@@ -53,7 +53,7 @@ struct CLIENT {
     bool connected;
     char channelName[NICK_SIZE];
     bool muted;
-    bool isAdmin;
+    bool isAdmin = false;
 };
 
 struct CHANNEL {
@@ -72,13 +72,18 @@ int channelAmnt = 0;
     Function that adds a channel to the server
     Channel is created with an admin already connected
 */
-void addChannel(char* name, CLIENT admin){
-    strcpy(admin.channelName, name);
-    admin.isAdmin = true;
+void addChannel(char* name, CLIENT *admin){
+    strcpy(admin->channelName, name);
+    printf("str cpy do client criacao: %s\n", admin->channelName);
+    admin->isAdmin = true;
 
     CHANNEL c;
     strcpy(c.name, name);
-    c.admin = admin;
+    c.admin = *admin;
+
+    c.connected.push_back(*admin);
+
+    channels.push_back(c);
 }
 
 /*
@@ -120,29 +125,69 @@ void sigintHandler(int sig_num){
     - If sendAll is true, send it to everyone.
     - If sendAll is false, send to all but the specified userId.
 */
-void sendMessage(char* message, int userID, bool sendAll) {
+void sendMessage(char* message, CLIENT client, bool sendAll) {
 
     mtx.lock();
 
-    for(int i = 0; i < MAXCLIENTS; i++){
-        if((clients[i].usrID != userID && clients[i].connected == true) || (sendAll==true && clients[i].connected == true)){
+    //enviar msg dentro de canais
+
+    //p usuario, ver canais que ele entrou e enviar para os clientes que estao nele
+    if(sendAll == false){
+        printf("entrou pra enviar msg\n");
+        CHANNEL ch;
+        printf("nome canal cliente: %s\n", client.channelName);
+        for (auto i = channels.begin(); i != channels.end(); i++){
+            printf("percorrendo canais: %s\n", (*i).name);
             
-            bool sended = false;
-            int count = 0;
-
-            while(sended == false && count < 5){
-                if (write(clients[i].socketId, message, strlen(message)) < 0 && flagMsg == false) {                
-                    count++;
-                }
-                else sended = true;
+            if (strcmp((*i).name, client.channelName) == 0){
+                ch = (*i);
+                printf("esta no canal %s\n", (*i).name);
             }
+        }
 
-            if(count >= 5 && sended == false){
-                error("!!! Error sending a message !!!\n");
-                close(clients[i].usrID);
+        for (auto i = ch.connected.begin(); i != ch.connected.end(); i++){
+            printf("percorrendo clientes: %s", (*i).nickname);
+            if (((*i).usrID != client.usrID) && ((*i).connected == true)){
+                printf("vai enviar para %s\n", (*i).nickname);
+                bool sended = false;
+                int count = 0;
+
+                while(sended == false && count < 5){
+                    if (write((*i).socketId, message, strlen(message)) < 0 && flagMsg == false) {                
+                        count++;
+                    }
+                    else sended = true;
+                }
+
+                if(count >= 5 && sended == false){
+                    error("!!! Error sending a message !!!\n");
+                    close((*i).usrID);
+                }
             }
         }
     }
+
+
+
+    // for(int i = 0; i < MAXCLIENTS; i++){
+    //     if((clients[i].usrID != userID && clients[i].connected == true) || (sendAll==true && clients[i].connected == true)){
+            
+    //         bool sended = false;
+    //         int count = 0;
+
+    //         while(sended == false && count < 5){
+    //             if (write(clients[i].socketId, message, strlen(message)) < 0 && flagMsg == false) {                
+    //                 count++;
+    //             }
+    //             else sended = true;
+    //         }
+
+    //         if(count >= 5 && sended == false){
+    //             error("!!! Error sending a message !!!\n");
+    //             close(clients[i].usrID);
+    //         }
+    //     }
+    // }
 
     mtx.unlock();
 }
@@ -180,7 +225,9 @@ CLIENT getClientByName(CHANNEL channel, char* name){
             return *i;
         
     // Don't know what to do if nickname doesn't exist?/?
-    return *channel.connected.begin();
+    CLIENT notExists;
+    notExists.usrID = -1;
+    return notExists;
 
 }
 
@@ -189,11 +236,11 @@ CLIENT getClientByName(CHANNEL channel, char* name){
     Function that controls commands from clients.
     Checks if client is allowed to use command.
 */
-void clientCommand(char* message, CLIENT client){
+void clientCommand(char* message, CLIENT *client){
 
     /* ------- COMMAND /ping ------- */
     if (strcasecmp(message, "/ping") == 0){
-        write(client.socketId, "pong", strlen("pong"));     // responds client with pong.
+        write(client->socketId, "pong", strlen("pong"));     // responds client with pong.
     }
 
 
@@ -205,61 +252,80 @@ void clientCommand(char* message, CLIENT client){
         
         if((channelName[0] == '&' || channelName[0] == '#') && strlen(channelName) <= 200){
             printf("--- Entering the %s ---\n", channelName);
-            sendMessage("entering", client.socketId, false);
+            sendMessage("entering", *client, false);
 
             bool flag = true;
-            for (auto i = channels.begin(); i != channels.end(); i++) 
+            for (auto i = channels.begin(); i != channels.end(); i++){
+                printf("percorrendo canais: %s", (*i).name);
                 if (strcmp((*i).name, channelName) == 0){      // if channel already exists, add client to channel
+                    printf("adicionando cliente no canal %s\n", channelName);
+                    strcpy (client->channelName, channelName);
+                    printf("strcpy pro client chan name: %s\n", client->channelName);
+                    client->isAdmin = false;
 
-                    strcpy (client.channelName, (*i).name);
-                    client.isAdmin = false;
-
-                    (*i).connected.push_back(client);        
+                    (*i).connected.push_back(*client);        
                     flag = false;
                     break;
                 }
+            }
 
-            if (flag) addChannel(channelName, client); // if channel doesn't exist, create channel
+            if (flag){
+                printf("criando canal %s\n", channelName);
+                addChannel(channelName, client); // if channel doesn't exist, create channel
+            }
 
         }
         else{
-            char errorMSG[200] = "\n - Error! Try again the command /join channelName\n - Remembers that channel names must be less than 200 characters and start with '&' or '#'. Also, it must not contain spaces, CTRL + G or commas.\n";
-            write(client.socketId, errorMSG, strlen(errorMSG));
+            char errorMSG[200] = "\n - Error! Try again the command \"/join channelName\"\n - Remembers that channel names must be less than 200 characters and start with '&' or '#'. Also, it must not contain spaces, CTRL + G or commas.\n";
+            write(client->socketId, errorMSG, strlen(errorMSG));
         }       
 
     }
-    else if (strcasecmp(message, "/nickname") == 0 ){ // changes users nickname
+    else if (strncasecmp(message, "/nickname ", 10) == 0 ){ // changes users nickname
 
-        strcpy(client.nickname, message + strlen("/nickname "));
-        write(client.socketId, "Nickname changed successfully!", strlen("Nickname changed successfully!"));
+        strcpy(client->nickname, message + strlen("/nickname "));
+        write(client->socketId, "Nickname changed successfully!", strlen("Nickname changed successfully!"));
 
     }
 
     // ##ADMIN COMMANDS##
-    else if(strcasecmp(message, "/kick") == 0){     // kicks another user from channel.
-        if (isAdmin(client)){
+    else if(strncasecmp(message, "/kick ", 6) == 0){     // kicks another user from channel.
+        printf("entrou no kick\n\n");
+        if (client->isAdmin){
             char name[NICK_SIZE];
             CHANNEL tempChan;
             strcpy(name, message + strlen("/kick "));
             for (auto i = channels.begin(); i != channels.end(); i++)
-               if (strcmp (client.channelName, (*i).name) == 0)
+               if (strcmp (client->channelName, (*i).name) == 0)
                     tempChan = *i;
 
             //CLIENT temp = getClientByName(tempChan, name);  // client to be kicked
+            CLIENT ck = getClientByName(tempChan, name);
+            if(ck.usrID != -1){
+                 // remove client
+                // ck.connected = false;
+                // close(ck.socketId);
+                // clientsNum--;
+                // flagFull = false;
+                write(ck.socketId, "kicked", strlen("kicked"));
+                printf("User %s kicked.\n", ck.nickname);
+            }
+            else printf("user does not exists in this channel\n");
+
             //Kick client here
 
         }
         else {
-             write(client.socketId, "You are not allowed to use this command!", strlen("You are not allowed to use this command!"));
+             write(client->socketId, "You are not allowed to use this command!", strlen("You are not allowed to use this command!"));
         }
 
     }
     else if(strcasecmp(message, "/mute") == 0){ // mutes a user in current channel.
-        if (isAdmin(client)){
+        if (isAdmin(*client)){
             char name[NICK_SIZE];
             CHANNEL tempChan;
             for (auto i = channels.begin(); i != channels.end(); i++)
-               if (strcmp (client.channelName, (*i).name) == 0)
+               if (strcmp (client->channelName, (*i).name) == 0)
                     tempChan = *i;
 
             strcpy(name, message + strlen("/mute "));
@@ -269,15 +335,15 @@ void clientCommand(char* message, CLIENT client){
 
         }
         else {
-             write(client.socketId, "You are not allowed to use this command!", strlen("You are not allowed to use this command!"));
+             write(client->socketId, "You are not allowed to use this command!", strlen("You are not allowed to use this command!"));
         }
     }
     else if(strcasecmp(message, "/unmute") == 0){   // unmutes a user in current channel.
-        if (isAdmin(client)){
+        if (isAdmin(*client)){
             char name[NICK_SIZE];
             CHANNEL tempChan;
             for (auto i = channels.begin(); i != channels.end(); i++)
-               if (strcmp (client.channelName, (*i).name) == 0)
+               if (strcmp (client->channelName, (*i).name) == 0)
                     tempChan = *i;
 
             strcpy(name, message + strlen("/unmute "));
@@ -290,15 +356,15 @@ void clientCommand(char* message, CLIENT client){
             
         }
         else {
-             write(client.socketId, "You are not allowed to use this command!", strlen("You are not allowed to use this command!"));
+             write(client->socketId, "You are not allowed to use this command!", strlen("You are not allowed to use this command!"));
         }
     }
     else if(strcasecmp(message, "/whois") == 0){    // returns IP address of a user.
-        if (isAdmin(client)){
+        if (isAdmin(*client)){
             char name[NICK_SIZE];
             CHANNEL tempChan;
              for (int i = 0; i < channelAmnt; i++)
-               if (strcmp (client.channelName, channels[i].name) == 0)
+               if (strcmp (client->channelName, channels[i].name) == 0)
                     tempChan = channels[i];
             strcpy(name, message + strlen("/whois "));
             //CLIENT temp = getClientByName(tempChan, name);
@@ -306,7 +372,7 @@ void clientCommand(char* message, CLIENT client){
             // Send it back to admin
         }
         else {
-             write(client.socketId, "You are not allowed to use this command!", strlen("You are not allowed to use this command!"));
+             write(client->socketId, "You are not allowed to use this command!", strlen("You are not allowed to use this command!"));
         }
     }
 
@@ -350,12 +416,14 @@ void clientController(CLIENT client){
             if (strlen(message) > 0) {
 
                 if(message[0] == '/')
-                    clientCommand(message, client);
+                    clientCommand(message, &client);
 
                 else{
                     char formatedMessage[BUFFER_SIZE+NICK_SIZE+200];
                     sprintf(formatedMessage, "%s: %s", client.nickname, message);
-                    sendMessage(formatedMessage, client.usrID, false);
+                    if(client.isAdmin) printf("eh admin!");
+                    else printf("no es admin\n");
+                    sendMessage(formatedMessage, client, false);
                     
                     // Prints on the server who sent the message to whom
                     printf("%s\n", formatedMessage); 
@@ -366,7 +434,7 @@ void clientController(CLIENT client){
             sprintf(message, "\n---- %s has left. ----\n\n", client.nickname);
             printf("%s", message);
 
-            sendMessage(message, client.usrID, false);
+            sendMessage(message, client, false);
 
             flagMsg = true; // disconnect
         } else {
@@ -414,7 +482,8 @@ void sendController(){
                         sprintf(message, "Server: %s", buffer);
                     else sprintf(message, "\nServer: %s", buffer);
                     
-                    sendMessage(message, 0, true);
+                    CLIENT c;
+                    sendMessage(message, c, true);
                     bzero(buffer, BUFFER_SIZE); // clears buffer
                     bzero(message,BUFFER_SIZE+NICK_SIZE+2); // clears message
 
@@ -427,7 +496,8 @@ void sendController(){
                 strcpy(buffer, bufferMax);
             }
             sprintf(message, "Server: %s", buffer);
-            sendMessage(message, 0, true); // send message to all clients
+            CLIENT c;
+            sendMessage(message, c, true); // send message to all clients
         }
     }
 }
