@@ -153,7 +153,7 @@ void userCommand(char command[]){
         sendMessage(command);
     }
     
-    else if ((strncasecmp(command, "/kick ", 6) == 0) || (strcasecmp(command, "/mute") == 0) || (strcasecmp(command, "/unmute") == 0) || (strcasecmp(command, "/whois") == 0)){  // admin commands
+    else if ((strncasecmp(command, "/kick ", 6) == 0) || (strncasecmp(command, "/mute ", 6) == 0) || (strncasecmp(command, "/unmute ", 8) == 0) || (strncasecmp(command, "/whois ", 7) == 0)){  // admin commands
         if(connected) sendMessage(command);
         else printf("\n->You are not connected to any chat yet!\n"
                         "-> Use the /connect command first to connect to a server.\n\n");
