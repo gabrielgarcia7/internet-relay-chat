@@ -20,4 +20,4 @@
 <p><em>	$ make runServer</em></p>
 <p><em>	$ make runClient</em></p>
 
-<p><strong>	Note:</strong> The port number can be changed in the Makefile.</p>
+<p><strong>	Note:</strong> The default port number used was 52547, but can be changed in the Makefile.</p>

@@ -2,7 +2,7 @@
     Computer Network SSC-0142
 
     ---- Internet Relay Chat ----
-    Module 2 - Communication between multiple clients and server
+    Module 3 - Multiple channel implementation
 
     Caio Augusto Duarte Basso NUSP 10801173
     Gabriel Garcia Lorencetti NUSP 10691891
@@ -125,7 +125,7 @@ void userCommand(char command[]){
             return;
         
         printf("Port number: ");
-        fgets(portnumber, 256, stdin);
+        fgets(portnumber, 256, stdin);        
         portnumber[strlen(portnumber)-1] = '\0';
 
         if(strcasecmp(portnumber, "ABORT") == 0)

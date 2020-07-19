@@ -2,7 +2,7 @@
     Computer Network SSC-0142
 
     ---- Internet Relay Chat ----
-    Module 2 - Communication between multiple clients and server
+    Module 3 - Multiple channel implementation
 
     Caio Augusto Duarte Basso NUSP 10801173
     Gabriel Garcia Lorencetti NUSP 10691891
@@ -35,6 +35,7 @@
 #define BUFFER_SIZE 2048 // max char amount of buffer
 #define NICK_SIZE 50 // max char amount of nickname
 #define BUFFER_SIZE_MAX 40960 // max char amount of bufferMax
+#define CHANNEL_NAME_SIZE 200  // max char amount of channel name
 
 typedef struct CLIENT client;
 typedef struct CHANNEL channel;
@@ -54,12 +55,12 @@ struct CLIENT {
     char nickname[NICK_SIZE];
     int usrID;
     bool connected;
-    char channelName[NICK_SIZE];
+    char channelName[CHANNEL_NAME_SIZE];
     bool isAdmin = false;
 };
 
 struct CHANNEL {
-    char name[NICK_SIZE];
+    char name[CHANNEL_NAME_SIZE];
     std::list <CLIENT> connected;   // stores clients
     CLIENT admin;                   // stores the channel admin
     std::list <CLIENT> mutedUsers;   // stores muted clients
@@ -158,6 +159,7 @@ void sendMessage(char* message, CLIENT client, bool sendAll) {
         if(!isMuted(client)){
 
             // Prints on the server who sent the message to whom
+            if(ch.name != NULL) printf("[%s] ", ch.name);
             printf("%s\n", message); 
 
             for (auto i = ch.connected.begin(); i != ch.connected.end(); i++){
@@ -180,7 +182,7 @@ void sendMessage(char* message, CLIENT client, bool sendAll) {
             }
         }
         else{
-            char msgMuted[100] = "\n---- You cannot send messages on this channel. The administrator mutated you. ----\n";
+            char msgMuted[100] = "\n---- You cannot send messages on this channel. The administrator muted you. ----\n";
             write(client.socketId, msgMuted, strlen(msgMuted));
         }
     }
@@ -263,7 +265,7 @@ void clientCommand(char* message, CLIENT *client){
                     write(client->socketId, joinChatMsg, strlen(joinChatMsg));
 
                     char joinChatMsgAll[100];
-                    sprintf(joinChatMsgAll, "\n---- %s joined the channel %s! ----\n", client->nickname, channelName);
+                    sprintf(joinChatMsgAll, "\n\n---- %s joined the channel %s! ----\n", client->nickname, channelName);
                     printf("%s", joinChatMsgAll);
                     sendMessage(joinChatMsgAll, *client, false);
 
@@ -279,7 +281,7 @@ void clientCommand(char* message, CLIENT *client){
                 sprintf(createChatMsg, "\n---- You have successfully created and joined channel %s! ----\n\n- Now, you are the administrator! Manage wisely...\n", channelName);
                 write(client->socketId, createChatMsg, strlen(createChatMsg));
                 char createChatMsgserver[100];
-                sprintf(createChatMsgserver, "\n---- %s created and joined the channel %s! ----\n", client->nickname, channelName);
+                sprintf(createChatMsgserver, "\n---- %s created and joined the channel %s! ----\n\n", client->nickname, channelName);
                 printf("%s", createChatMsgserver);
             }
 
@@ -326,7 +328,6 @@ void clientCommand(char* message, CLIENT *client){
     /* ------- COMMAND /mute ------- */
     else if(strncasecmp(message, "/mute ", 6) == 0){ // mutes a user in current channel.
         if (client->isAdmin){
-            printf("entrou no unmute\n");
             char name[NICK_SIZE];
             CHANNEL *tempChan;
             for (auto i = channels.begin(); i != channels.end(); i++)
@@ -343,14 +344,19 @@ void clientCommand(char* message, CLIENT *client){
             else{           
             
                 CLIENT *temp = getClientByName(*tempChan, name);
-                tempChan->mutedUsers.push_back(*temp);    // adds indicated client to muted list
+                if (temp == NULL){
+                    write(client->socketId, "\n---- User does not exists in this channel! ----\n", strlen("\n---- User does not exists in this channel! ----\n"));
+                }
+                else {
+                    tempChan->mutedUsers.push_back(*temp);    // adds indicated client to muted list
 
-                char muteMsg[100] = "\n---- You have been mutated by the administrator ----\n\n";
-                write(temp->socketId, muteMsg, strlen(muteMsg));
+                    char muteMsg[100] = "\n---- You have been muted by the administrator ----\n\n";
+                    write(temp->socketId, muteMsg, strlen(muteMsg));
 
-                char muteAdmMsg[100];
-                sprintf(muteAdmMsg, "\n---- You mutated %s ----\n\n", temp->nickname);
-                write(client->socketId, muteAdmMsg, strlen(muteAdmMsg));
+                    char muteAdmMsg[100];
+                    sprintf(muteAdmMsg, "\n---- You muted %s ----\n\n", temp->nickname);
+                    write(client->socketId, muteAdmMsg, strlen(muteAdmMsg));
+                }
             }
         }
         else {
@@ -369,19 +375,23 @@ void clientCommand(char* message, CLIENT *client){
 
             strcpy(name, message + strlen("/unmute "));
             CLIENT *temp = getClientByName(*tempChan, name);  // gets client to be unmuted
+            if (temp == NULL){
+                write(client->socketId, "\n---- User does not exists in this channel! ----\n", strlen("\n---- User does not exists in this channel! ----\n"));
+            }
+            else{
+                for (auto i = tempChan->mutedUsers.begin(); i != tempChan->mutedUsers.end(); i++)   // removes client form muted list
+                    if (strcmp (temp->nickname, (*i).nickname) == 0){
+                        tempChan->mutedUsers.erase(i);
+                        break;
+                    }
 
-            for (auto i = tempChan->mutedUsers.begin(); i != tempChan->mutedUsers.end(); i++)   // removes client form muted list
-                if (strcmp (temp->nickname, (*i).nickname) == 0){
-                    tempChan->mutedUsers.erase(i);
-                    break;
-                }
+                char muteMsg[100] = "\n---- Your mute has been removed. You can speak freely now, but be kind! ----\n";
+                write(temp->socketId, muteMsg, strlen(muteMsg));
 
-            char muteMsg[100] = "\n---- Your mute has been removed. You can speak freely now, but be kind! ----\n";
-            write(temp->socketId, muteMsg, strlen(muteMsg));
-
-            char muteAdmMsg[100];
-            sprintf(muteAdmMsg, "\n---- You removed the mute from %s ----\n\n", temp->nickname);
-            write(client->socketId, muteAdmMsg, strlen(muteAdmMsg));           
+                char muteAdmMsg[100];
+                sprintf(muteAdmMsg, "\n---- You removed the mute from %s ----\n\n", temp->nickname);
+                write(client->socketId, muteAdmMsg, strlen(muteAdmMsg));           
+            }
                 
             
         }
@@ -401,13 +411,17 @@ void clientCommand(char* message, CLIENT *client){
             strcpy(name, message + strlen("/whois "));
             CLIENT *temp = getClientByName(tempChan, name);
 
-            socklen_t len;
-            len = sizeof(temp->address);
-            getpeername(temp->socketId, (struct sockaddr*)&temp->address, &len);
-            char ip[200];
-            sprintf(ip, "\nIP of %s: %s:%d\n", temp->nickname, inet_ntoa((temp->address.sin_addr)), ntohs(temp->address.sin_port));
-            write(client->socketId, ip, strlen(ip));
-
+            if (temp == NULL){
+                write(client->socketId, "\n---- User does not exists in this channel! ----\n", strlen("\n---- User does not exists in this channel! ----\n"));
+            }
+            else{
+                socklen_t len;
+                len = sizeof(temp->address);
+                getpeername(temp->socketId, (struct sockaddr*)&temp->address, &len);
+                char ip[200];
+                sprintf(ip, "\nIP of %s: %s:%d\n", temp->nickname, inet_ntoa((temp->address.sin_addr)), ntohs(temp->address.sin_port));
+                write(client->socketId, ip, strlen(ip));
+            }
         }
         else {
              write(client->socketId, "\n---- You are not allowed to use this command! ----\n", strlen("\n---- You are not allowed to use this command! ----\n"));
@@ -434,7 +448,7 @@ void clientController(CLIENT client){
     else{
         strcpy(client.nickname, nick);
 
-        sprintf(message, "---- %s joined the chat! ----\n\n", client.nickname);
+        sprintf(message, "\n---- %s joined the chat! ----\n\n", client.nickname);
         printf("%s", message);
     }
     
